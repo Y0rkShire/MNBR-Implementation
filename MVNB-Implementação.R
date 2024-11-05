@@ -1,6 +1,8 @@
-k <- 11  # Inclui o intercepto como parte dos betas
+k <- ncol(X)  # Inclui o intercepto como parte dos betas
 n <- nrow(Y)  # Número de observações
 d <- ncol(Y)  # Número de variáveis de resposta
+
+c <- colMeans(exp(-Y))
 
 empirical_means <- colMeans(Y)
 empirical_variances <- apply(Y, 2, var)
@@ -21,20 +23,19 @@ for (t in 1:d) {
   init_m[t] <- empirical_means[t] * (1 - theta_t) / theta_t   # Estimativa de m_t
 }
 
-init_params <- c(as.vector(init_beta), init_lambda, init_m)
+init_params <- c(init_lambda, init_m)
 
 iteration_counter <<- 0  # Variável global para contagem de iterações
 
 # Definindo a função de verossimilhança
-log_likelihood <- function(params, y, X, d, k, c) {
+log_likelihood <- function(params, y, X, d, k, c, beta_hat) {
   iteration_counter <<- iteration_counter + 1
   
-  # Extraindo beta, lambda e m dos parâmetros
-  beta <- matrix(params[1:(d * (k + 1))], nrow = d, ncol = k + 1)
-  lambda_values <- params[(d * (k + 1) + 1):(d * (k + 1) + d * (d - 1) / 2)]
-  m <- params[(d * (k + 1) + d * (d - 1) / 2 + 1):length(params)]
+  # Extrair lambda e m dos parâmetros
+  lambda_values <- params[1:(d * (d - 1) / 2)]
+  m <- params[(d * (d - 1) / 2 + 1):length(params)]
   
-  # Construindo a matriz simétrica de lambda
+  # Construir matriz simétrica lambda
   lambda <- matrix(0, d, d)
   idx <- 1
   for (l in 1:(d - 1)) {
@@ -45,14 +46,14 @@ log_likelihood <- function(params, y, X, d, k, c) {
     }
   }
   
-  # Calculando mu com o intercepto
-  X_intercept <- cbind(1, X)  # Adicionando a coluna de intercepto
-  mu <- exp(X_intercept %*% t(beta))
+  # Calcular mu usando beta fixo
+  X_intercept <- cbind(1, X)
+  mu <- exp(X_intercept %*% beta_hat)
   
-  # Inicializando a verossimilhança
+  # Inicializar verossimilhança
   logL <- 0
   
-  # Computando a verossimilhança
+  # Computar log-verossimilhança
   for (i in 1:n) {
     term1 <- sum(y[i, ] * log(m * mu[i, ] / (1 + m * mu[i, ])))
     term2 <- -sum(1 / m * log(1 + m * mu[i, ]))
@@ -65,28 +66,32 @@ log_likelihood <- function(params, y, X, d, k, c) {
           (exp(-y[i, l]) - c[l]) * (exp(-y[i, nu]) - c[nu])
       }
     }
-    
     logL <- logL + term1 + term2 + term3 + log(1 + interaction_term)
   }
   
-  cat("Iteration:", iteration_counter, "\n")
-  cat("Current Parameters (Beta, Lambda, m):\n")
-  print(list(beta = beta, lambda_values = lambda_values, m = m))
-  cat("Current Log-Likelihood:", -logL, "\n\n")
+  cat("Iteration:", iteration_counter, "\n", "- Log-Likelihood:", -logL, "\n")
   
   return(-logL)
 }
 
-# Otimização com o modelo ajustado para intercepto
-result <- optim(init_params, log_likelihood, y = Y, X = X, d = d, k = k, c = c, 
-                method = "BFGS", control = list(maxit = 1000, trace = TRUE))
+# Parâmetros iniciais ajustados (excluindo beta)
+init_params <- c(init_lambda, init_m)
 
-# Extraindo parâmetros otimizados
-beta_hat <- matrix(result$par[1:(d * (k + 1))], nrow = d, ncol = k + 1)
-lambda_values_hat <- result$par[(d * (k + 1) + 1):(d * (k + 1) + d * (d - 1) / 2)]
-m_hat <- result$par[(d * (k + 1) + d * (d - 1) / 2 + 1):length(result$par)]
+# Limites inferiores ajustados (excluindo beta)
+lower_bounds <- rep(1e-5, length(init_params))
 
-# Reconstruindo a matriz simétrica lambda
+# Rodar otimização apenas para lambda e m
+result <- optim(
+  init_params, log_likelihood, y = Y, X = X, d = d, k = k, c = c, beta_hat = beta_hat_der,
+  method = "L-BFGS-B", control = list(maxit = 1000, trace = TRUE),
+  lower = lower_bounds
+)
+
+# Extrair parâmetros otimizados
+lambda_values_hat <- result$par[1:(d * (d - 1) / 2)]
+m_hat <- result$par[(d * (d - 1) / 2 + 1):length(result$par)]
+
+# Reconstruir matriz simétrica lambda
 lambda_hat <- matrix(0, d, d)
 idx <- 1
 for (l in 1:(d - 1)) {
@@ -97,8 +102,13 @@ for (l in 1:(d - 1)) {
   }
 }
 
-# Exibindo os resultados
-list(beta = beta_hat, lambda = lambda_hat, m = m_hat)
+# Imprimir resultados finais
+cat("Optimization completed\n")
+cat("Final Iteration Count:", iteration_counter, "\n")
+cat("Final Negative Log-Likelihood:", result$value, "\n\n")
+
+# Exibir parâmetros otimizados (beta fixo)
+list(beta = beta_hat_der, lambda = lambda_hat, m = m_hat)
 
 
 #calculando estimadores
@@ -111,8 +121,6 @@ m_hat_2 <- m_hat
 lambda_hat_2 <- lambda_hat
 
 mu_hat_2 <- exp(beta_hat_2[, 1] + X %*% t(beta_hat_2[, 2:12]))
-
-par(mfrow = c(2, 2))  # Divide the plotting area into 2x2 for 4 plots
 
 ```{r Betas por derivada, beeeem melhor}
 inv_x <- ginv(cbind(1,X))
