@@ -114,3 +114,9 @@ mu_hat_2 <- exp(beta_hat_2[, 1] + X %*% t(beta_hat_2[, 2:12]))
 
 par(mfrow = c(2, 2))  # Divide the plotting area into 2x2 for 4 plots
 
+```{r Betas por derivada, beeeem melhor}
+inv_x <- ginv(cbind(1,X))
+beta_hat_der <- solve(t(cbind(1,X)) %*% cbind(1,X)) %*% t(cbind(1,X)) %*% log(Y + 0.01)
+
+```
+
