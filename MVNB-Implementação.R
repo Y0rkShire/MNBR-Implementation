@@ -1,3 +1,7 @@
+inv_x <- ginv(cbind(1,X))
+beta_hat_der <- solve(t(cbind(1,X)) %*% cbind(1,X)) %*% t(cbind(1,X)) %*% log(Y + 0.001)
+
+
 k <- ncol(X)  # Inclui o intercepto como parte dos betas
 n <- nrow(Y)  # Número de observações
 d <- ncol(Y)  # Número de variáveis de resposta
@@ -15,7 +19,7 @@ for (t in 1:d) {
   init_beta[t, ] <- coef(nb_model)  # Armazena os coeficientes, incluindo o intercepto
 }
 
-init_lambda <- rep(0, d * (d - 1) / 2)  # Inicializando lambda
+init_lambda <- rep(1e-5, d * (d - 1) / 2)  # Inicializando lambda
 
 init_m <- numeric(d)
 for (t in 1:d) {
@@ -31,11 +35,11 @@ iteration_counter <<- 0  # Variável global para contagem de iterações
 log_likelihood <- function(params, y, X, d, k, c, beta_hat) {
   iteration_counter <<- iteration_counter + 1
   
-  # Extrair lambda e m dos parâmetros
+  # Extract lambda and m from parameters
   lambda_values <- params[1:(d * (d - 1) / 2)]
   m <- params[(d * (d - 1) / 2 + 1):length(params)]
   
-  # Construir matriz simétrica lambda
+  # Build symmetric lambda matrix
   lambda <- matrix(0, d, d)
   idx <- 1
   for (l in 1:(d - 1)) {
@@ -46,14 +50,21 @@ log_likelihood <- function(params, y, X, d, k, c, beta_hat) {
     }
   }
   
-  # Calcular mu usando beta fixo
+  # Print lambda and m values at the start of each iteration
+  cat("Iteration:", iteration_counter, "\n")
+  cat("Lambda matrix:\n")
+  print(lambda)
+  cat("m values:\n")
+  print(m)
+  
+  # Calculate mu using fixed beta
   X_intercept <- cbind(1, X)
   mu <- exp(X_intercept %*% beta_hat)
   
-  # Inicializar verossimilhança
+  # Initialize log-likelihood
   logL <- 0
   
-  # Computar log-verossimilhança
+  # Compute log-likelihood
   for (i in 1:n) {
     term1 <- sum(y[i, ] * log(m * mu[i, ] / (1 + m * mu[i, ])))
     term2 <- -sum(1 / m * log(1 + m * mu[i, ]))
@@ -62,14 +73,17 @@ log_likelihood <- function(params, y, X, d, k, c, beta_hat) {
     interaction_term <- 0
     for (l in 1:(d - 1)) {
       for (nu in (l + 1):d) {
-        interaction_term <- interaction_term + lambda[l, nu] * 
-          (exp(-y[i, l]) - c[l]) * (exp(-y[i, nu]) - c[nu])
+        interaction_term <- interaction_term + lambda[l, nu] * (exp(-y[i, l]) - c[l]) * (exp(-y[i, nu]) - c[nu])
       }
     }
+    if(interaction_term < -1){
+      interaction_term <- -1 + 1e-5
+    }
+    
     logL <- logL + term1 + term2 + term3 + log(1 + interaction_term)
   }
   
-  cat("Iteration:", iteration_counter, "\n", "- Log-Likelihood:", -logL, "\n")
+  cat("- Log-Likelihood:", -logL, "\n")
   
   return(-logL)
 }
@@ -121,6 +135,24 @@ m_hat_2 <- m_hat
 lambda_hat_2 <- lambda_hat
 
 mu_hat_2 <- exp(beta_hat_2[, 1] + X %*% t(beta_hat_2[, 2:12]))
+
+
+
+AIC_params <- c(result$par)
+
+verossimilhancas <- c()
+X <- X_orig[,-5]
+for(K in 1:k - 1){
+  iteration_counter <<- 0
+  inv_x <- ginv(cbind(1,X[,-K]))
+  beta_hat_AIC <- solve(t(cbind(1,X[,-K])) %*% cbind(1,X[,-K])) %*% t(cbind(1,X[,-K])) %*% log(Y + 0.001)
+  verossimilhancas <- c(verossimilhancas,
+                        optim(
+    AIC_params, log_likelihood, y = Y, X = X[,-K], d = d, k = k - 2, c = c, beta_hat = beta_hat_AIC,
+    method = "L-BFGS-B", control = list(maxit = 1000, trace = TRUE),
+    lower = lower_bounds
+  )$value*2 + 20)
+}
 
 ```{r Betas por derivada, beeeem melhor}
 inv_x <- ginv(cbind(1,X))
